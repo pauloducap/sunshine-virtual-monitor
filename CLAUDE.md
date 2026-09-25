@@ -35,14 +35,22 @@ activé par le script au démarrage de la session.
 ## Branches et déploiement
 
 - Branches locales, une par PR, chacune partant de `upstream/main` :
-  `fix/log-display-name`, `fix/converge-single-display`, `fix/hdr-target-vdd`.
-  `integration` = fusion des trois (sans conflit) ; c'est la version à déployer.
+  `fix/log-display-name`, `fix/converge-single-display`, `fix/hdr-target-vdd`,
+  `fix/vdd-xml-refresh-rate`. `integration` = fusion des quatre (sans
+  conflit) ; c'est la version à déployer.
 - Remotes : `origin` = fork `pauloducap`, `upstream` = `Cynary`.
 - Identité git locale au dépôt : `pauloducap@users.noreply.github.com`.
 - Sunshine exécute les scripts depuis `C:\Users\paul\Documents\sunshine-vdm\`
   (copie manuelle, avec `vsynctoggle` et `multimonitortool-x64`), pas depuis ce
   dépôt. Recopier `setup_sunvdm.ps1` après chaque modification.
-- `gh` n'est pas installé : ouvrir les PR depuis le navigateur.
+- `gh` est installé et authentifié (`pauloducap`). PR amont ouvertes le
+  25/09/2026 : #29 (log), #30 (convergence + sweep), #31 (HDR), #32 (XML
+  `refresh_rate` + redémarrage pilote). La PR #28
+  « Integration » (tout en bloc, ouverte par erreur via le bouton GitHub du
+  fork) a été fermée. Attention : « Compare & pull request » sur le fork cible
+  Cynary par défaut.
+- `main` du fork = `integration` (fast-forward) + `CLAUDE.md`. Ne jamais
+  ouvrir de PR amont depuis `main` ou `integration` : elles embarquent ces notes.
 
 ## Corrections déjà appliquées (committées sur les branches `fix/*`)
 
@@ -93,6 +101,25 @@ si le VDD n'est pas trouvé, ne pas afficher « sweep clean ».
 Remplacer par `$($d.source.name)`. Trivial, mais c'est ce qui a permis de
 diagnostiquer tout le reste.
 
+### 5. Patch XML : `<refresh>` au lieu de `<refresh_rate>`, redémarrage sans attente
+
+Le schéma du VDD de MTT utilise `<refresh_rate>` par résolution et des
+`<g_refresh_rate>` globaux (60/90/120/144/165/244) valables pour toutes les
+résolutions. Le script testait `$_.refresh` : aucun mode ne matchait jamais,
+chaque nouveau client ajoutait un nœud parasite `<refresh>` (trois accumulés
+dans le XML local : 2732x2048@120, 1920x1080@144…) et redémarrait le pilote.
+
+Nouveau bloc (branche `fix/vdd-xml-refresh-rate`, PR #32) : mode reconnu si
+largeur/hauteur existent et que le taux est soit le `refresh_rate` propre, soit
+un taux global ; écriture en `<refresh_rate>` ; chemin du XML lu dans le
+registre `SettingsPath` avec `Test-Path` ; si un patch est nécessaire et que le
+pilote tourne, `Disable-PnpDevice` puis attente réelle de l'arrêt ; patch
+déplacé **avant** la capture d'état. Logique de détection testée sur une copie
+du XML réel, pas encore en session réelle.
+
+Les nœuds parasites `<refresh>` du XML local sont inoffensifs (ignorés par le
+pilote) ; à nettoyer à la main dans VDD Control si on veut un XML propre.
+
 ## Bugs restants, non corrigés
 
 ### `Get-Int` / `Get-Bool` : fallback par arguments mort
@@ -106,39 +133,11 @@ encore — obtient `missing SUNSHINE_CLIENT_WIDTH`.
 Correctif : capturer `$script:args` au niveau du script, ou déclarer un bloc
 `param()`.
 
-### Chemins codés en dur
-
-`C:\VirtualDisplayDriver\vdd_settings.xml` est en dur alors que le VDD 25.x
-publie son emplacement dans le registre (`SettingsPath`). Et le `Get-Content`
-du XML n'a aucun `Test-Path` : fichier ailleurs, le script explose avant même
-d'avoir commencé.
-
 ### `option.txt` est un vestige
 
 Les écritures dans `C:\IddSampleDriver\option.txt` visent l'ancien
 IddSampleDriver, pas le VDD de MTT. Crée un dossier inutile sur les machines
 modernes. À conditionner.
-
-### Le patch XML écrit `<refresh>` au lieu de `<refresh_rate>`
-
-Le schéma du VDD de MTT utilise `<refresh_rate>` ; le script teste `$_.refresh`
-et crée un nœud `<refresh>`. Conséquences : les résolutions ajoutées via VDD
-Control ne sont **jamais** reconnues (le script patche quand même et redémarre
-le pilote), et le nœud ajouté est ignoré par le pilote. Ça marche malgré tout
-parce que les `g_refresh_rate` globaux (60/90/120/144/165/244) s'appliquent à
-toutes les résolutions. Le XML local contient déjà un nœud parasite
-`2732x2048 <refresh>120</refresh>` ; l'iPhone (2202x1179@120) déclenchera le
-patch + redémarrage à sa première connexion.
-
-Correctif : comparer largeur/hauteur seulement (ou `refresh_rate` + globaux),
-écrire `<refresh_rate>`.
-
-### Le patch XML redémarre le pilote en plein setup
-
-Quand la résolution demandée n'est pas dans le XML, le script patche et
-`Disable-PnpDevice` sans attente derrière. Observé : `exited with code [1]` et
-session ratée. Faire le patch **avant** toute capture d'état, avec attente de
-stabilisation.
 
 ### `Throw` partout
 
