@@ -159,6 +159,10 @@ afficherait aussi les commits de #33), après rebase sur `upstream/main`.
 - Conflit à la fusion dans `integration` (bloc de capture déplacé par #32),
   résolu à la main : même conflit à prévoir lors du rebase amont.
 
+Décision du 30/09/2026 : **pas de tâche planifiée** sur la machine de Paul
+(« on reste classique »). `-Install` reste dans le script pour l'amont, mais
+ici le restore ne s'utilise qu'à la main, avec `-Force`, en cas de besoin.
+
 Testé à blanc (pas de marqueur / marqueur récent / marqueur ancien, affichage
 inchangé). Le marqueur côté setup et le cas réel « reboot en pleine session »
 ne sont **pas** testés.
