@@ -36,10 +36,12 @@ activé par le script au démarrage de la session.
 
 - Branches locales, une par PR, chacune partant de `upstream/main` :
   `fix/log-display-name`, `fix/converge-single-display`, `fix/hdr-target-vdd`,
-  `fix/vdd-xml-refresh-rate`, `fix/teardown-restore-first`, plus
-  `feat/crash-recovery` (empilée sur la précédente). `integration` = fusion
-  des six ; c'est la version à déployer (trois scripts : setup, teardown,
-  restore).
+  `fix/vdd-xml-refresh-rate`, `fix/teardown-restore-first`,
+  `fix/script-args-fallback`, `fix/legacy-option-txt`,
+  `fix/vdd-device-selection`, `fix/no-half-configured-displays`, plus
+  `feat/crash-recovery` (empilée sur `fix/teardown-restore-first`).
+  `integration` = fusion de toutes ; c'est la version à déployer (trois
+  scripts : setup, teardown, restore).
 - Merge auto : chaque branche `fix/*` terminée est fusionnée dans
   `integration`, puis `integration` dans `main` (merge classique, pas
   fast-forward : `main` porte en plus les commits de notes), poussée et
@@ -51,7 +53,9 @@ activé par le script au démarrage de la session.
   dépôt. Recopier `setup_sunvdm.ps1` après chaque modification.
 - `gh` est installé et authentifié (`pauloducap`). PR amont ouvertes le
   25/09/2026 : #29 (log), #30 (convergence + sweep), #31 (HDR), #32 (XML
-  `refresh_rate` + redémarrage pilote) ; le 30/09/2026 : #33 (teardown).
+  `refresh_rate` + redémarrage pilote) ; le 30/09/2026 : #33 (teardown), #34
+  (arguments), #35 (`option.txt`), #36 (sélection du VDD), #37 (pas d'écrans
+  à moitié configurés).
   Paul n'a que le droit `pull` sur l'amont : seul Cynary peut fusionner.
   La PR #28
   « Integration » (tout en bloc, ouverte par erreur via le bouton GitHub du
@@ -167,35 +171,29 @@ Testé à blanc (pas de marqueur / marqueur récent / marqueur ancien, affichage
 inchangé). Le marqueur côté setup et le cas réel « reboot en pleine session »
 ne sont **pas** testés.
 
-## Bugs restants, non corrigés
+### 8. Derniers bugs connus (30/09/2026)
 
-### `Get-Int` / `Get-Bool` : fallback par arguments mort
+- **Arguments positionnels** (`fix/script-args-fallback`, #34) : `$args` dans
+  une fonction = arguments de la fonction. Arguments du script gardés dans
+  `$scriptArgs`. Reproduit avec l'ancien code, corrigé, variables d'env.
+  toujours prioritaires.
+- **`option.txt`** (`fix/legacy-option-txt`, #35) : écrit seulement si
+  `C:\IddSampleDriver` existe, jamais créé. Chez Paul le dossier existe (créé
+  par l'ancien script, contient seulement les modes) : tant qu'il est là, le
+  script continue d'y écrire, sans effet. Supprimable à la main.
+- **Sélection du VDD** (`fix/vdd-device-selection`, #36) : même bloc dans
+  setup et teardown ; priorité aux périphériques présents, puis à VDD by MTT
+  (`Root\MttVDD`) ; avertissement si plusieurs candidats. Testé sur la machine
+  et avec `Get-PnpDevice` simulé (4 cas).
+- **`Throw`** (`fix/no-half-configured-displays`, #37) : Sunshine ne lance pas
+  l'`undo` d'un `do` qui échoue. VDD absent → nouvelles tentatives, puis
+  `Undo-Setup` (lance le teardown puis échoue) ; topologie non convergée →
+  avertissement et on streame quand même ; `SetResolution` → avertissement.
+  Les `Throw` d'avant toute modification (paramètres, VDD introuvable,
+  sauvegarde d'état) sont gardés. Testé avec la vraie boucle et des doublures
+  du module d'affichage (5 scénarios), pas en session réelle.
 
-Dans une fonction PowerShell, `$args` désigne les arguments **de la fonction**,
-pas ceux du script. `$args[$argIndex]` est donc toujours vide. Seule la voie par
-variables d'environnement fonctionne. Quiconque suit l'ancienne documentation —
-celle qui passe `%SUNSHINE_CLIENT_WIDTH%` en paramètre, comme le fork VR le fait
-encore — obtient `missing SUNSHINE_CLIENT_WIDTH`.
-
-Correctif : capturer `$script:args` au niveau du script, ou déclarer un bloc
-`param()`.
-
-### `option.txt` est un vestige
-
-Les écritures dans `C:\IddSampleDriver\option.txt` visent l'ancien
-IddSampleDriver, pas le VDD de MTT. Crée un dossier inutile sur les machines
-modernes. À conditionner.
-
-### `Throw` partout
-
-Le moindre accroc HDR avorte le script — et Sunshine annule alors le lancement
-de l'application, laissant les écrans à moitié configurés sans teardown.
-Dégrader proprement avec des avertissements.
-
-### `$vdd_name` prend `[0]` aveuglément
-
-Si plusieurs périphériques d'affichage correspondent aux motifs (reliquat
-d'IddSampleDriver + VDD de MTT), le choix est arbitraire.
+Plus aucun bug connu non corrigé.
 
 ## Améliorations envisagées
 
