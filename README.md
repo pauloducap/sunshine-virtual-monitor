@@ -16,6 +16,7 @@
 - [Sunshine Setup](#sunshine-setup)
     - [Option 1 - UI](#option-1---ui)
     - [Option 2 - Config File](#option-2---config-file)
+- [Crash Recovery](#crash-recovery)
 
 
 ## Disclaimer
@@ -109,6 +110,8 @@ multimonitortool-x64 (directory)
 
 README.md
 
+restore_sunvdm.ps1
+
 setup_sunvdm.ps1
 
 teardown_sunvdm.ps1
@@ -159,3 +162,26 @@ global_prep_cmd = [{"do":"cmd /C powershell.exe -executionpolicy bypass -windows
 
 > [!NOTE]
 > If you already have something in the `global_prep_cmd` that you setup, you should be savvy enough to know where/how to add this to the list.
+
+## Crash Recovery
+
+If the host crashes, loses power or reboots while a session is streaming, Sunshine never runs the teardown script: the physical displays stay disabled and the virtual display stays enabled.
+
+`setup_sunvdm.ps1` writes a `session.lock` file when a session starts and `teardown_sunvdm.ps1` removes it. `restore_sunvdm.ps1` uses it to detect a session that was never torn down and runs the teardown for it.
+
+To run it automatically at logon, register the scheduled task once from an elevated PowerShell prompt:
+
+```batch
+powershell.exe -executionpolicy bypass -file "%PATH_TO_THIS_REPOSITORY%\restore_sunvdm.ps1" -Install
+```
+
+The task only restores the displays when the pending session started before the last boot, so it never interrupts a session that is streaming. Its output goes to `sunvdm_restore.log`. Use `-Uninstall` to remove the task.
+
+To restore the displays by hand at any time, whatever the session state:
+
+```batch
+powershell.exe -executionpolicy bypass -file "%PATH_TO_THIS_REPOSITORY%\restore_sunvdm.ps1" -Force
+```
+
+> [!NOTE]
+> Connecting again with Moonlight after a crash also works: the setup script notices the pending session and keeps the display state it saved, instead of saving the streaming layout as the state to restore.
