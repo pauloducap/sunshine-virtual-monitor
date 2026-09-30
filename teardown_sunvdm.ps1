@@ -53,6 +53,7 @@ if (Test-Path $stateFile) {
 if ($vdd_name) {
     Write-Host "Removing the moonlight display."
     Get-PnpDevice -FriendlyName $vdd_name | Disable-PnpDevice -Confirm:$false
+    if ((Get-PnpDevice -FriendlyName $vdd_name).Status -eq "OK") { Write-Host "WARNING: the moonlight display is still enabled" }
 } else {
     Write-Host "WARNING: virtual display device not found, nothing to remove"
 }
