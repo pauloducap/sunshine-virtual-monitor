@@ -5,17 +5,21 @@ Import-Module WindowsDisplayManager
 # ----------------------------
 # helpers: env-first parsing
 # ----------------------------
+# inside a function $args holds the function's own arguments, so keep the
+# script's arguments for the positional fallback
+$scriptArgs = $args
+
 function Get-Int($envName, $argIndex) {
     $v = [Environment]::GetEnvironmentVariable($envName)
     if ($v) { return [int]$v }
-    if ($args.Length -gt $argIndex) { return [int]$args[$argIndex] }
+    if ($scriptArgs.Length -gt $argIndex) { return [int]$scriptArgs[$argIndex] }
     Throw "missing $envName"
 }
 
 function Get-Bool($envName, $argIndex) {
     $v = [Environment]::GetEnvironmentVariable($envName)
     if ($v) { return $v -match '^(1|true|yes)$' }
-    if ($args.Length -gt $argIndex) { return $args[$argIndex] -match '^(1|true|yes)$' }
+    if ($scriptArgs.Length -gt $argIndex) { return $scriptArgs[$argIndex] -match '^(1|true|yes)$' }
     return $false
 }
 
@@ -44,14 +48,26 @@ $option_file_path = "C:\IddSampleDriver\option.txt"
 # ----------------------------
 # find virtual display device
 # ----------------------------
-$vdd_name = (
+$vdd_candidates = @(
     Get-PnpDevice -Class Display |
     Where-Object {
         $_.FriendlyName -like "*idd*" -or
         $_.FriendlyName -like "*mtt*" -or
         $_.FriendlyName -like "Virtual Display*"
     }
-)[0].FriendlyName
+)
+# several devices can match, e.g. a leftover IddSampleDriver next to VDD by
+# MTT, or a ghost of a previous install: prefer present devices (a ghost cannot
+# be enabled), then VDD by MTT
+$vdd_name = (
+    $vdd_candidates |
+    Sort-Object @{ Expression = { -not $_.Present } },
+                @{ Expression = { -not (($_.HardwareID -match "MttVDD") -or $_.FriendlyName -like "*mtt*" -or $_.FriendlyName -like "Virtual Display*") } } |
+    Select-Object -First 1
+).FriendlyName
+if ($vdd_candidates.Count -gt 1) {
+    Write-Host "WARNING: several virtual display devices found ($($vdd_candidates.FriendlyName -join ', ')), using $vdd_name"
+}
 
 if (-not $vdd_name) {
     Throw "virtual display device not found"
@@ -132,14 +148,18 @@ Set-Content -Path $sessionFile -Value (Get-Date -Format s)
 # ----------------------------
 # ensure option.txt contains mode
 # ----------------------------
-if (!(Test-Path $option_file_path)) {
-    New-Item -ItemType Directory -Force -Path (Split-Path $option_file_path) | Out-Null
-    Set-Content -Path $option_file_path -Value "1"
-}
+# option.txt is only read by the legacy IddSampleDriver, which is installed
+# in C:\IddSampleDriver. VDD by MTT uses vdd_settings.xml instead: do not
+# create the folder when the legacy driver is not there.
+if (Test-Path (Split-Path $option_file_path)) {
+    if (!(Test-Path $option_file_path)) {
+        Set-Content -Path $option_file_path -Value "1"
+    }
 
-$option_to_check = "$width, $height, $refresh_rate"
-if ((Get-Content $option_file_path) -notcontains $option_to_check) {
-    Add-Content -Path $option_file_path -Value $option_to_check
+    $option_to_check = "$width, $height, $refresh_rate"
+    if ((Get-Content $option_file_path) -notcontains $option_to_check) {
+        Add-Content -Path $option_file_path -Value $option_to_check
+    }
 }
 
 Write-Host "setting up virtual display ${width}x${height}@${refresh_rate} hdr ${hdr_string}"
@@ -152,13 +172,26 @@ Get-PnpDevice -FriendlyName $vdd_name | Enable-PnpDevice -Confirm:$false
 # ---------------------------
 # display convergence loop
 # ---------------------------
+# Sunshine does not run the undo command of a do command that fails: from
+# here on the displays are being changed, so put them back before failing.
+function Undo-Setup($reason) {
+    Write-Host "ERROR: $reason, restoring the displays"
+    & (Join-Path $filePath "teardown_sunvdm.ps1")
+    Throw $reason
+}
+
 $retries = 0
 while ($true) {
     $displays = WindowsDisplayManager\GetAllPotentialDisplays
 
     $virtual = $displays | Where-Object { $_.source.description -eq $vdd_name } | Select-Object -First 1
 
-    if (-not $virtual) { Throw "virtual display vanished" }
+    if (-not $virtual) {
+        # the display can take a moment to show up after Enable-PnpDevice
+        if ($retries++ -ge 40) { Undo-Setup "virtual display not found" }
+        Start-Sleep -Milliseconds 300
+        continue
+    }
 
     # refresh active displays each iteration
     $active = $displays | Where-Object { $_.active }
@@ -180,7 +213,11 @@ while ($true) {
 
     Start-Sleep -Milliseconds 300
 
-    if ($retries++ -ge 40) { Throw "failed to converge display topology safely" }
+    # the virtual display is there, stream with what we have rather than abort
+    if ($retries++ -ge 40) {
+        Write-Host "WARNING: display topology did not converge, other displays may still be active"
+        break
+    }
 }
 
 Write-Host "sunshine display diable complete"
@@ -188,7 +225,13 @@ Write-Host "sunshine display diable complete"
 # ----------------------------
 # set virtual resolution LAST
 # ----------------------------
-$virtual.SetResolution($width, $height, $refresh_rate)
+try {
+    if (-not $virtual.SetResolution($width, $height, $refresh_rate)) {
+        Write-Host "WARNING: could not set ${width}x${height}@${refresh_rate} on the virtual display"
+    }
+} catch {
+    Write-Host "WARNING: could not set ${width}x${height}@${refresh_rate} on the virtual display: $_"
+}
 
 # ----------------------------
 # hdr toggle (windowsdisplaymanager hack)
