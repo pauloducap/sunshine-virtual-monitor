@@ -5,6 +5,7 @@ Import-Module WindowsDisplayManager
 $filePath = Split-Path $MyInvocation.MyCommand.source
 $displayStateFile = Join-Path -Path $filePath -ChildPath "display_state.json"
 $stateFile = Join-Path -Path $filePath -ChildPath "state.json"
+$sessionFile = Join-Path -Path $filePath -ChildPath "session.lock"
 $vsynctool = Join-Path -Path $filePath -ChildPath "vsynctoggle-1.1.0-x86_64.exe"
 $multitool = Join-Path -Path $filePath -ChildPath "multimonitortool-x64\MultiMonitorTool.exe"
 
@@ -73,3 +74,6 @@ if (Restore-Displays 5) {
     $active = @(WindowsDisplayManager\GetAllPotentialDisplays | Where-Object { $_.active })
     Write-Host "active displays after fallback: $($active.source.name -join ', ')"
 }
+
+# the session is over, setup may save a fresh display state next time
+Remove-Item $sessionFile -ErrorAction SilentlyContinue

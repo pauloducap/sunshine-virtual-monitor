@@ -36,6 +36,7 @@ Write-Host "sunshine params: ${width}x${height}@${refresh_rate} hdr=${hdr_string
 $filePath = Split-Path $MyInvocation.MyCommand.Source
 $displayStateFile = Join-Path $filePath "display_state.json"
 $stateFile        = Join-Path $filePath "state.json"
+$sessionFile      = Join-Path $filePath "session.lock"
 $vsynctool        = Join-Path $filePath "vsynctoggle-1.1.0-x86_64.exe"
 $multitool        = Join-Path $filePath "multimonitortool-x64\MultiMonitorTool.exe"
 $option_file_path = "C:\IddSampleDriver\option.txt"
@@ -47,14 +48,23 @@ $driverConfig = "C:\VirtualDisplayDriver\vdd_settings.xml"
 # ----------------------------
 # snapshot current state
 # ----------------------------
-$state = @{ vsync = & $vsynctool status }
-if ($state.vsync -like "*default*") { $state.vsync = "default" }
-ConvertTo-Json $state | Out-File $stateFile
+# session.lock is removed by teardown. If it is still there, the previous
+# session was never torn down (crash, reboot while streaming) and the displays
+# are still in their streaming layout: keep the state that session saved
+# instead of overwriting it with the wrong one.
+if ((Test-Path $sessionFile) -and (Test-Path $displayStateFile)) {
+    Write-Host "WARNING: previous session was not torn down, keeping its saved display state"
+} else {
+    $state = @{ vsync = & $vsynctool status }
+    if ($state.vsync -like "*default*") { $state.vsync = "default" }
+    ConvertTo-Json $state | Out-File $stateFile
 
-$initial_displays = WindowsDisplayManager\GetAllPotentialDisplays
-if (!(WindowsDisplayManager\SaveDisplaysToFile -displays $initial_displays -filePath $displayStateFile)) {
-    Throw "failed to save initial display state"
+    $initial_displays = WindowsDisplayManager\GetAllPotentialDisplays
+    if (!(WindowsDisplayManager\SaveDisplaysToFile -displays $initial_displays -filePath $displayStateFile)) {
+        Throw "failed to save initial display state"
+    }
 }
+Set-Content -Path $sessionFile -Value (Get-Date -Format s)
 
 & $vsynctool off
 
