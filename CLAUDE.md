@@ -36,8 +36,12 @@ activé par le script au démarrage de la session.
 
 - Branches locales, une par PR, chacune partant de `upstream/main` :
   `fix/log-display-name`, `fix/converge-single-display`, `fix/hdr-target-vdd`,
-  `fix/vdd-xml-refresh-rate`. `integration` = fusion des quatre (sans
-  conflit) ; c'est la version à déployer.
+  `fix/vdd-xml-refresh-rate`, `fix/teardown-restore-first`. `integration` =
+  fusion des cinq (sans conflit) ; c'est la version à déployer.
+- Merge auto : chaque branche `fix/*` terminée est fusionnée dans
+  `integration`, puis `integration` dans `main` (merge classique, pas
+  fast-forward : `main` porte en plus les commits de notes), poussée et
+  déployée. Vérifier le contenu déployé, pas seulement le code de retour.
 - Remotes : `origin` = fork `pauloducap`, `upstream` = `Cynary`.
 - Identité git locale au dépôt : `pauloducap@users.noreply.github.com`.
 - Sunshine exécute les scripts depuis `C:\Users\paul\Documents\sunshine-vdm\`
@@ -45,7 +49,9 @@ activé par le script au démarrage de la session.
   dépôt. Recopier `setup_sunvdm.ps1` après chaque modification.
 - `gh` est installé et authentifié (`pauloducap`). PR amont ouvertes le
   25/09/2026 : #29 (log), #30 (convergence + sweep), #31 (HDR), #32 (XML
-  `refresh_rate` + redémarrage pilote). La PR #28
+  `refresh_rate` + redémarrage pilote) ; le 30/09/2026 : #33 (teardown).
+  Paul n'a que le droit `pull` sur l'amont : seul Cynary peut fusionner.
+  La PR #28
   « Integration » (tout en bloc, ouverte par erreur via le bouton GitHub du
   fork) a été fermée. Attention : « Compare & pull request » sur le fork cible
   Cynary par défaut.
@@ -114,8 +120,20 @@ largeur/hauteur existent et que le taux est soit le `refresh_rate` propre, soit
 un taux global ; écriture en `<refresh_rate>` ; chemin du XML lu dans le
 registre `SettingsPath` avec `Test-Path` ; si un patch est nécessaire et que le
 pilote tourne, `Disable-PnpDevice` puis attente réelle de l'arrêt ; patch
-déplacé **avant** la capture d'état. Logique de détection testée sur une copie
-du XML réel, pas encore en session réelle.
+déplacé **avant** la capture d'état. Validé en session réelle le 28/09/2026
+(iPhone 2202x1179@120 HDR on) : aucun patch, XML intact, HDR activé sur le VDD,
+`sweep clean`, teardown OK.
+
+### 6. Teardown : restaurer avant de couper le VDD
+
+Branche `fix/teardown-restore-first`, PR #33. Ordre : restauration de l'état
+sauvegardé (3 essais, VDD encore actif) → vsync si `state.json` existe →
+`Disable-PnpDevice` du VDD → seconde restauration/validation (5 essais) → en
+dernier recours `MultiMonitorTool /enable` sur tout écran inactif, sans
+`Throw`. Gardes sur `state.json`, `display_state.json` et VDD introuvable.
+Testé à blanc seulement (état courant rejoué sur lui-même) ; **pas encore en fin
+de session réelle**. L'ancien teardown est gardé dans
+`sunshine-vdm\teardown_sunvdm.ps1.bak`.
 
 Les nœuds parasites `<refresh>` du XML local sont inoffensifs (ignorés par le
 pilote) ; à nettoyer à la main dans VDD Control si on veut un XML propre.
@@ -144,13 +162,6 @@ modernes. À conditionner.
 Le moindre accroc HDR avorte le script — et Sunshine annule alors le lancement
 de l'application, laissant les écrans à moitié configurés sans teardown.
 Dégrader proprement avec des avertissements.
-
-### Ordre dangereux dans le teardown
-
-`teardown_sunvdm.ps1` désactive le VDD **avant** de restaurer les écrans. Si
-`UpdateDisplaysFromFile` échoue ses 5 tentatives, il lève une exception et il ne
-reste plus aucun écran actif. Restaurer d'abord, désactiver le VDD ensuite.
-Manque aussi un garde sur l'absence de `state.json` / `display_state.json`.
 
 ### Aucune récupération après crash
 
