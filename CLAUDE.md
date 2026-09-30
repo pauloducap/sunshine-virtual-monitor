@@ -36,8 +36,10 @@ activé par le script au démarrage de la session.
 
 - Branches locales, une par PR, chacune partant de `upstream/main` :
   `fix/log-display-name`, `fix/converge-single-display`, `fix/hdr-target-vdd`,
-  `fix/vdd-xml-refresh-rate`, `fix/teardown-restore-first`. `integration` =
-  fusion des cinq (sans conflit) ; c'est la version à déployer.
+  `fix/vdd-xml-refresh-rate`, `fix/teardown-restore-first`, plus
+  `feat/crash-recovery` (empilée sur la précédente). `integration` = fusion
+  des six ; c'est la version à déployer (trois scripts : setup, teardown,
+  restore).
 - Merge auto : chaque branche `fix/*` terminée est fusionnée dans
   `integration`, puis `integration` dans `main` (merge classique, pas
   fast-forward : `main` porte en plus les commits de notes), poussée et
@@ -138,6 +140,29 @@ de session réelle**. L'ancien teardown est gardé dans
 Les nœuds parasites `<refresh>` du XML local sont inoffensifs (ignorés par le
 pilote) ; à nettoyer à la main dans VDD Control si on veut un XML propre.
 
+### 7. Récupération après crash (`restore_sunvdm.ps1`)
+
+Branche `feat/crash-recovery`, **empilée sur** `fix/teardown-restore-first`.
+Pas de PR amont pour l'instant : l'ouvrir une fois #33 fusionnée (sinon la PR
+afficherait aussi les commits de #33), après rebase sur `upstream/main`.
+
+- `setup` écrit `session.lock` après la capture d'état ; `teardown` le supprime.
+- Si `session.lock` existe déjà au setup, la session précédente n'a jamais été
+  démontée : on **garde** le `display_state.json` existant au lieu de capturer
+  la disposition de streaming (VDD seul) comme état à restaurer.
+- `restore_sunvdm.ps1` : lance le teardown si le marqueur date d'avant le
+  dernier démarrage (max de `LastBootUpTime` et de l'événement Kernel-Boot 27,
+  pour couvrir le démarrage rapide). `-Force` restaure sans condition.
+  `-Install` / `-Uninstall` gèrent la tâche planifiée `sunvdm-restore`
+  (à l'ouverture de session, privilèges élevés) — à lancer dans un PowerShell
+  administrateur. Sortie dans `sunvdm_restore.log`.
+- Conflit à la fusion dans `integration` (bloc de capture déplacé par #32),
+  résolu à la main : même conflit à prévoir lors du rebase amont.
+
+Testé à blanc (pas de marqueur / marqueur récent / marqueur ancien, affichage
+inchangé). Le marqueur côté setup et le cas réel « reboot en pleine session »
+ne sont **pas** testés.
+
 ## Bugs restants, non corrigés
 
 ### `Get-Int` / `Get-Bool` : fallback par arguments mort
@@ -163,12 +188,6 @@ Le moindre accroc HDR avorte le script — et Sunshine annule alors le lancement
 de l'application, laissant les écrans à moitié configurés sans teardown.
 Dégrader proprement avec des avertissements.
 
-### Aucune récupération après crash
-
-PC redémarré en pleine session : les écrans physiques restent désactivés, rien
-ne les rallume. Bloquant sur une machine sans écran. Prévoir un
-`restore_sunvdm.ps1` autonome.
-
 ### `$vdd_name` prend `[0]` aveuglément
 
 Si plusieurs périphériques d'affichage correspondent aux motifs (reliquat
@@ -179,7 +198,6 @@ d'IddSampleDriver + VDD de MTT), le choix est arbitraire.
 - `config.json` à côté des scripts : motifs de nom du VDD, chemin du XML,
   tolérance RDP, nombre de tentatives, niveau de log
 - Log horodaté, avec niveaux
-- `restore_sunvdm.ps1` de secours
 - PSScriptAnalyzer en CI
 
 ## Comment tester
