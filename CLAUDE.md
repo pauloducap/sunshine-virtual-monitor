@@ -215,8 +215,15 @@ mémorisée. Utilisé dans la boucle de convergence et le balayage final,
 MultiMonitorTool en repli.
 
 Diagnostic vérifié sur l'état réel : `\\.\DISPLAY2` → HKC **et** EVE, VDD sur un
-autre adaptateur. Validation Windows OK sans application ; **l'application
-réelle n'a pas encore tourné en session**. Attention : `PointL` du module est
+autre adaptateur. **Validé en session réelle le 01/10/2026 à 16:47** (après un
+teardown avec le nouvel ordre) : `kept only the virtual display active` dans la
+boucle, puis une seconde fois dans le balayage final (Windows avait rallumé un
+écran après `SetResolution`), `sweep clean`, et Sunshine capture
+`Virtual Desktop : 1920x1080` au lieu de 4480x1440.
+
+Note : `WmiMonitorID.Active` reste `True` pour les écrans physiques même
+éteints (il indique « branché », pas « affiché ») — ne pas s'en servir pour
+vérifier. Attention : `PointL` du module est
 déclaré en `long` (64 bits) au lieu de 32 — ne pas lire/écrire
 `sourceMode.position` via ces structures.
 
