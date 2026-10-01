@@ -132,11 +132,19 @@ déplacé **avant** la capture d'état. Validé en session réelle le 28/09/2026
 
 ### 6. Teardown : restaurer avant de couper le VDD
 
-Branche `fix/teardown-restore-first`, PR #33. Ordre : restauration de l'état
-sauvegardé (3 essais, VDD encore actif) → vsync si `state.json` existe →
-`Disable-PnpDevice` du VDD → seconde restauration/validation (5 essais) → en
-dernier recours `MultiMonitorTool /enable` sur tout écran inactif, sans
-`Throw`. Gardes sur `state.json`, `display_state.json` et VDD introuvable.
+Branche `fix/teardown-restore-first`, PR #33. Ordre : vsync si `state.json`
+existe → `Disable-PnpDevice` du VDD → restauration (5 essais) → en dernier
+recours `MultiMonitorTool /enable` sur tout écran inactif, sans `Throw`.
+
+**Erreur corrigée le 01/10/2026** : la première version restaurait les écrans
+*avant* de couper le VDD. Résultat en vraie session : écrans physiques mis en
+mode **Dupliquer** sur une seule sortie, et Windows a mémorisé cette disposition
+pour la combinaison {HKC, EVE, VDD} → chaque session suivante démarrait
+dupliquée. Cause : WindowsDisplayManager associe sorties et moniteurs par `id`
+**sans l'`adapterId`** ; le VDD est sur sa propre « carte » dont les ids
+(source 0…) recoupent ceux de la RTX, et le module enregistre avec
+`SaveToDatabase`. Ne **jamais** appeler `UpdateDisplaysFromFile` / `Enable()`
+du module tant que le VDD est actif. Gardes sur `state.json`, `display_state.json` et VDD introuvable.
 Testé à blanc seulement (état courant rejoué sur lui-même) ; **pas encore en fin
 de session réelle**. L'ancien teardown est gardé dans
 `sunshine-vdm\teardown_sunvdm.ps1.bak`.
@@ -193,7 +201,26 @@ ne sont **pas** testés.
   sauvegarde d'état) sont gardés. Testé avec la vraie boucle et des doublures
   du module d'affichage (5 scénarios), pas en session réelle.
 
-Plus aucun bug connu non corrigé.
+### 9. Écrans physiques en mode Dupliquer (01/10/2026)
+
+Branche `fix/duplicated-displays` (pas de PR amont pour l'instant). En mode
+Dupliquer, deux moniteurs partagent une sortie et `MultiMonitorTool /disable`
+ne peut pas la couper (41 essais ratés, bureau capturé 4480x1440).
+`Set-VirtualDisplayOnly` : `QueryDisplayConfig` des chemins actifs, nom GDI de
+chaque source résolu **avec son adapterId**, flag actif retiré sur tout ce qui
+n'est pas la sortie du VDD, puis `SetDisplayConfig` (validation puis
+`Apply|UseSupplied|AllowChanges|SaveToDatabase`) — l'équivalent de
+« Déconnecter cet affichage ». Le `SaveToDatabase` répare aussi la disposition
+mémorisée. Utilisé dans la boucle de convergence et le balayage final,
+MultiMonitorTool en repli.
+
+Diagnostic vérifié sur l'état réel : `\.\DISPLAY2` → HKC **et** EVE, VDD sur un
+autre adaptateur. Validation Windows OK sans application ; **l'application
+réelle n'a pas encore tourné en session**. Attention : `PointL` du module est
+déclaré en `long` (64 bits) au lieu de 32 — ne pas lire/écrire
+`sourceMode.position` via ces structures.
+
+Plus aucun autre bug connu non corrigé.
 
 ## Améliorations envisagées
 
