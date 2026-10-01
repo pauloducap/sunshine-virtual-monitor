@@ -34,14 +34,8 @@ function Restore-Displays($tries) {
     return $false
 }
 
-# Bring the physical displays back while the virtual display is still there:
-# if the restore fails, at least one display stays usable.
-#
 if (-not (Test-Path $displayStateFile)) {
     Write-Host "WARNING: $displayStateFile not found, cannot restore the saved display state"
-} else {
-    Write-Host "Restoring the physical displays."
-    if (-not (Restore-Displays 3)) { Write-Host "restore before removing the moonlight display did not converge, will retry after" }
 }
 
 if (Test-Path $stateFile) {
@@ -58,8 +52,10 @@ if ($vdd_name) {
     Write-Host "WARNING: virtual display device not found, nothing to remove"
 }
 
-# Removing the virtual display can change the topology again, so check the
-# final state against the saved one.
+# Remove the virtual display before restoring. WindowsDisplayManager matches
+# sources and targets by id without the adapter id: with the virtual display
+# still enabled, restoring can put the physical displays in duplicate mode on a
+# single source, and Windows then saves that layout for the next sessions.
 #
 if (Restore-Displays 5) {
     Write-Host "Successfully removed the moonlight display."
