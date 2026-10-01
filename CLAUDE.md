@@ -214,7 +214,7 @@ n'est pas la sortie du VDD, puis `SetDisplayConfig` (validation puis
 mémorisée. Utilisé dans la boucle de convergence et le balayage final,
 MultiMonitorTool en repli.
 
-Diagnostic vérifié sur l'état réel : `\.\DISPLAY2` → HKC **et** EVE, VDD sur un
+Diagnostic vérifié sur l'état réel : `\\.\DISPLAY2` → HKC **et** EVE, VDD sur un
 autre adaptateur. Validation Windows OK sans application ; **l'application
 réelle n'a pas encore tourné en session**. Attention : `PointL` du module est
 déclaré en `long` (64 bits) au lieu de 32 — ne pas lire/écrire
