@@ -124,6 +124,48 @@ Get-PnpDevice -FriendlyName $vdd_name | Enable-PnpDevice -Confirm:$false
 # ---------------------------
 # display convergence loop
 # ---------------------------
+# Keep only the virtual display's path(s) active, in a single SetDisplayConfig call.
+# Works from any topology, including duplicated (clone) displays, which
+# MultiMonitorTool /disable cannot turn off. Returns $true on success.
+function Set-VirtualDisplayOnly($vddSourceName, [switch]$ValidateOnly) {
+    $pathsCount = 0; $modesCount = 0
+    $flags = [DisplayConfig+QueryDisplayConfigFlags]::OnlyActivePaths
+    if ([DisplayConfig]::GetDisplayConfigBufferSizes($flags, [ref]$pathsCount, [ref]$modesCount) -ne 0) { return $false }
+    $paths = @(); $modes = @()
+    if ([DisplayConfig]::QueryDisplayConfig($flags, [ref]$pathsCount, [ref]$paths, [ref]$modesCount, [ref]$modes) -ne 0) { return $false }
+
+    $keep = 0
+    for ($i = 0; $i -lt $paths.Length; $i++) {
+        # sources are numbered per adapter: resolve the GDI name (\.\DISPLAYn) with the adapter id
+        $name = New-Object DisplayConfig+DisplayConfigSourceDeviceName
+        $header = New-Object DisplayConfig+DisplayConfigDeviceInfoHeader
+        $header.type = [DisplayConfig+DisplayConfigDeviceInfoType]::DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME
+        $header.size = [uint32][System.Runtime.InteropServices.Marshal]::SizeOf($name)
+        $header.adapterId = $paths[$i].sourceInfo.adapterId
+        $header.id = $paths[$i].sourceInfo.id
+        $name.header = $header
+        if ([DisplayConfig]::DisplayConfigGetDeviceInfo([ref]$name) -ne 0) { return $false }
+
+        if ($name.viewGdiDeviceName -eq $vddSourceName) {
+            $keep++
+        } else {
+            $path = $paths[$i]
+            $path.flags = $path.flags -band (-bnot [DisplayConfig+DisplayConfigPathInfoFlags]::PathActive)
+            $paths[$i] = $path
+        }
+    }
+    if ($keep -eq 0) { return $false }
+
+    $validate = [DisplayConfig+SetDisplayConfigFlags]::Validate -bor [DisplayConfig+SetDisplayConfigFlags]::UseSuppliedDisplayConfig
+    if ([DisplayConfig]::SetDisplayConfig($paths.Length, $paths, $modes.Length, $modes, $validate) -ne 0) { return $false }
+    if ($ValidateOnly) { return $true }
+
+    # SaveToDatabase: Windows remembers this layout for this set of monitors
+    $apply = [DisplayConfig+SetDisplayConfigFlags]::Apply -bor [DisplayConfig+SetDisplayConfigFlags]::UseSuppliedDisplayConfig `
+        -bor [DisplayConfig+SetDisplayConfigFlags]::AllowChanges -bor [DisplayConfig+SetDisplayConfigFlags]::SaveToDatabase
+    return ([DisplayConfig]::SetDisplayConfig($paths.Length, $paths, $modes.Length, $modes, $apply) -eq 0)
+}
+
 $retries = 0
 while ($true) {
     $displays = WindowsDisplayManager\GetAllPotentialDisplays
@@ -144,10 +186,14 @@ while ($true) {
 
     # disable any extra displays
     $extra = $active | Where-Object { $_.source.name -ne $virtual.source.name }
-    foreach ($d in $extra) {
-        # try { $d.SetResolution(1,1,$d.CurrentRefreshRate) } catch {}
-        Write-Host "disabling $d"
-        & $multitool /disable $d.source.name
+    if (Set-VirtualDisplayOnly $virtual.source.name) {
+        Write-Host "kept only the virtual display active"
+    } else {
+        foreach ($d in $extra) {
+            # try { $d.SetResolution(1,1,$d.CurrentRefreshRate) } catch {}
+            Write-Host "disabling $d"
+            & $multitool /disable $d.source.name
+        }
     }
 
     Start-Sleep -Milliseconds 300
