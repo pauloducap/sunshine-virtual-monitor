@@ -265,6 +265,18 @@ Changer de mode HDR/SDR exige de quitter la session et d'en relancer une : le
 `do_cmd` ne s'exécute qu'au démarrage. Piste : deux entrées d'application dans
 Sunshine (« Desktop HDR » / « Desktop SDR »).
 
+**Battlefield 6 noir après une reconnexion (04/10/2026)** — son OK, image noire.
+Le jeu pose `WDA_EXCLUDEFROMCAPTURE` (affinité 0x11) sur sa fenêtre quand une
+capture démarre alors qu'il tourne déjà (probablement l'anti-triche EA
+Javelin). Sunshine logue alors toutes les 10 s « Windows is currently blocking
+DRM-protected content from capture ». Jeu lancé pendant une session connectée :
+OK. Reconnexion avec le jeu ouvert : noir. Rien à corriger côté scripts (ils ne
+tournent même pas à une simple reconnexion) ; ne **jamais** tenter de retirer
+l'affinité depuis un autre processus (injection = risque de ban). Contournement
+: se connecter d'abord, lancer le jeu ensuite ; relancer le jeu après toute
+reconnexion. Diagnostic : `GetWindowDisplayAffinity` sur les fenêtres
+(seul `bf6` avait une affinité non nulle).
+
 Nouveau client : si sa résolution n'est pas déjà dans le XML du VDD, le script
 patche et redémarre le pilote en pleine session (voir bug plus haut). Ajouter
 les résolutions à l'avance dans VDD Control.
